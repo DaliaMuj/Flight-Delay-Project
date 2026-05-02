@@ -27,7 +27,7 @@ def add_time_features(df):
 
 
 # -----------------------
-# 📊 TRAFFIC
+# 📊 TRAFFIC FEATURES
 # -----------------------
 def add_traffic_features(df):
     df["traffic_density"] = df.groupby("timestamp")["icao24"].transform("count")
@@ -62,7 +62,6 @@ def add_time_of_day(df):
 # ⚡ SPEED + ALTITUDE FEATURES
 # -----------------------
 def add_physics_features(df):
-    # speed bucket
     df["speed_level"] = pd.cut(
         df["velocity"],
         bins=[0, 150, 250, 400],
@@ -75,7 +74,6 @@ def add_physics_features(df):
         "High": 2
     })
 
-    # altitude bucket
     df["altitude_level"] = pd.cut(
         df["geo_altitude"],
         bins=[0, 2000, 8000, 12000],
@@ -145,7 +143,7 @@ def train_model(df):
 
     if len(df_model) < 100:
         print("Not enough data for ML")
-        df["delay_prob"] = 0
+        df["delay_prob"] = 0.1
         return df
 
     X = df_model[features]
@@ -168,6 +166,9 @@ def train_model(df):
 
     X_full = df[features].fillna(0)
     df["delay_prob"] = model.predict_proba(X_full)[:, 1]
+
+    # 🔥 FIX: evităm 0 și 1
+    df["delay_prob"] = df["delay_prob"].clip(0.01, 0.99)
 
     importances = model.feature_importances_
     print("\nFeature importance:")
