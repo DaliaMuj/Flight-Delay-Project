@@ -187,15 +187,19 @@ def train_model(df):
 def add_risk_level(df):
     df["delay_prob"] = df["delay_prob"].fillna(0)
 
-    conditions = [
-        (df["delay_prob"] <= 0.3),
-        (df["delay_prob"] <= 0.7),
-        (df["delay_prob"] > 0.7)
-    ]
-
-    choices = ["Low", "Medium", "High"]
-
-    df["risk_level"] = np.select(conditions, choices, default="Low")
+    df["risk_level"] = np.select(
+        [
+            df["delay_prob"] <= 0.3,
+            (df["delay_prob"] > 0.3) & (df["delay_prob"] <= 0.7),
+            df["delay_prob"] > 0.7
+        ],
+        [
+            "Low",
+            "Medium",
+            "High"
+        ],
+        default="Low"
+    )
 
     return df
 
