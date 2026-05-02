@@ -14,7 +14,7 @@ def load_data(path="flights_history.csv"):
 
 
 # -----------------------
-# 🕒 TIME + BASIC FEATURES
+# 🕒 TIME FEATURES
 # -----------------------
 def add_time_features(df):
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
@@ -27,11 +27,12 @@ def add_time_features(df):
 
 
 # -----------------------
-# 📊 TRAFFIC
+# 📊 TRAFFIC FEATURES
 # -----------------------
 def add_traffic_features(df):
     df["traffic_density"] = df.groupby("timestamp")["icao24"].transform("count")
 
+    # top 25% traffic = high
     threshold = df["traffic_density"].quantile(0.75)
     df["high_traffic"] = (df["traffic_density"] > threshold).astype(int)
 
@@ -39,7 +40,7 @@ def add_traffic_features(df):
 
 
 # -----------------------
-# 🧠 TIME BUCKET
+# 🧠 TIME OF DAY
 # -----------------------
 def add_time_of_day(df):
     df["time_of_day"] = pd.cut(
@@ -62,14 +63,25 @@ def add_time_of_day(df):
 # ⚡ VELOCITY FEATURES
 # -----------------------
 def add_velocity_features(df):
+    # calculate change
+    df["velocity_change"] = df.groupby("icao24")["velocity"].diff().fillna(0)
+
+    # adaptive threshold (bottom 10%)
     threshold = df["velocity_change"].quantile(0.1)
+
     df["is_slowing"] = (df["velocity_change"] < threshold).astype(int)
+
+    # debug
+    print("\nVelocity stats:")
+    print(df["velocity_change"].describe())
+    print("\nSlowing distribution:")
+    print(df["is_slowing"].value_counts())
 
     return df
 
 
 # -----------------------
-# CLEAN
+# CLEAN DATA
 # -----------------------
 def clean_data(df):
     df = df.fillna({
@@ -94,7 +106,7 @@ def create_target(df):
         df["high_traffic"]
     ).astype(int)
 
-    print("Delay distribution:")
+    print("\nDelay distribution:")
     print(df["delay"].value_counts())
 
     return df
@@ -137,7 +149,7 @@ def train_model(df):
     model.fit(X_train, y_train)
 
     accuracy = model.score(X_test, y_test)
-    print("Model accuracy:", accuracy)
+    print("\nModel accuracy:", accuracy)
 
     # predict pe tot datasetul
     X_full = df[features].fillna(0)
@@ -225,11 +237,11 @@ def print_insights(df):
 # -----------------------
 def save_output(df, path="flights_processed.csv"):
     df.to_csv(path, index=False)
-    print("Saved:", len(df))
+    print("\nSaved:", len(df))
 
 
 # -----------------------
-# 🚀 MAIN PIPELINE
+# 🚀 MAIN
 # -----------------------
 def main():
     df = load_data()
