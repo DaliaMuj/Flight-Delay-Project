@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
@@ -14,27 +15,49 @@ print("Rows loaded:", len(df))
 df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 df = df.sort_values(["icao24", "timestamp"])
 
-# -----------------------
-# 📊 FEATURE ENGINEERING
-# -----------------------
 df["hour"] = df["timestamp"].dt.hour
 df["day_of_week"] = df["timestamp"].dt.dayofweek
 
+# -----------------------
+# 📊 TRAFFIC
+# -----------------------
 df["traffic_density"] = df.groupby("timestamp")["icao24"].transform("count")
 
-# 🧠 advanced features
-df["is_night"] = ((df["hour"] < 6) | (df["hour"] > 20)).astype(int)
+# 🔥 better traffic threshold (top 25%)
+traffic_threshold = df["traffic_density"].quantile(0.75)
+df["high_traffic"] = (df["traffic_density"] > traffic_threshold).astype(int)
+
+# -----------------------
+# 🧠 TIME BUCKET
+# -----------------------
+df["time_of_day"] = pd.cut(
+    df["hour"],
+    bins=[0,6,12,18,24],
+    labels=["Night","Morning","Afternoon","Evening"]
+)
+
+df["time_of_day_num"] = df["time_of_day"].map({
+    "Night": 0,
+    "Morning": 1,
+    "Afternoon": 2,
+    "Evening": 3
+})
+
+# -----------------------
+# ⚡ VELOCITY FEATURES
+# -----------------------
 df["velocity_change"] = df.groupby("icao24")["velocity"].diff().fillna(0)
-df["high_traffic"] = (
-    df["traffic_density"] > df["traffic_density"].median()
-).astype(int)
+
+# 🔥 mai stabil decât raw change
+df["is_slowing"] = (df["velocity_change"] < -10).astype(int)
 
 # -----------------------
 # CLEAN
 # -----------------------
 df = df.fillna({
     "velocity": 0,
-    "geo_altitude": 0
+    "geo_altitude": 0,
+    "time_of_day_num": 0
 })
 
 # -----------------------
@@ -47,7 +70,7 @@ df["slow_flight"] = (
 
 df["delay"] = (
     df["slow_flight"] |
-    (df["high_traffic"] == 1)
+    df["high_traffic"]
 ).astype(int)
 
 print("Delay distribution:")
@@ -62,9 +85,8 @@ features = [
     "traffic_density",
     "velocity",
     "geo_altitude",
-    "is_night",
-    "velocity_change",
-    "high_traffic"
+    "is_slowing",
+    "time_of_day_num"
 ]
 
 df_model = df.dropna(subset=features + ["delay"])
@@ -89,36 +111,34 @@ else:
     accuracy = model.score(X_test, y_test)
     print("Model accuracy:", accuracy)
 
-    # IMPORTANT: evităm NaN la predict
     X_full = df[features].fillna(0)
-
     df["delay_prob"] = model.predict_proba(X_full)[:, 1]
 
-    # feature importance
+    # 🔥 feature importance
     importances = model.feature_importances_
-    feature_importance = dict(zip(features, importances))
-
     print("\nFeature importance:")
-    print(feature_importance)
+    print(dict(zip(features, importances)))
 
 # -----------------------
-# 🚦 FIX DELAY_PROB (NO NaN)
+# 🚦 CLEAN PROB
 # -----------------------
 df["delay_prob"] = df["delay_prob"].fillna(0)
 
 # -----------------------
-# 🚦 RISK LEVEL (FIXED)
+# 🚦 RISK LEVEL (robust)
 # -----------------------
-df["risk_level"] = pd.cut(
-    df["delay_prob"],
-    bins=[-0.01, 0.3, 0.7, 1.01],
-    labels=["Low", "Medium", "High"]
-)
+conditions = [
+    (df["delay_prob"] <= 0.3),
+    (df["delay_prob"] <= 0.7),
+    (df["delay_prob"] > 0.7)
+]
 
-df["risk_level"] = df["risk_level"].astype(str).fillna("Low")
+choices = ["Low", "Medium", "High"]
+
+df["risk_level"] = np.select(conditions, choices, default="Low")
 
 # -----------------------
-# 🧠 WHY (EXPLAINABILITY)
+# 🧠 EXPLAINABILITY
 # -----------------------
 def explain_row(row):
     reasons = []
@@ -126,13 +146,10 @@ def explain_row(row):
     if row["high_traffic"] == 1:
         reasons.append("High traffic")
 
-    if row["is_night"] == 1:
-        reasons.append("Night flight")
-
     if row["velocity"] < 200:
         reasons.append("Low speed")
 
-    if row["velocity_change"] < -20:
+    if row["is_slowing"] == 1:
         reasons.append("Slowing down")
 
     if row["geo_altitude"] < 2000:
@@ -141,7 +158,7 @@ def explain_row(row):
     return ", ".join(reasons)
 
 df["delay_reason"] = df.apply(
-    lambda row: explain_row(row) if row["delay_prob"] > 0.6 else "",
+    lambda row: explain_row(row) if row["delay_prob"] > 0.6 else "No risk",
     axis=1
 )
 
@@ -154,8 +171,8 @@ print(df.groupby("hour")["delay"].mean().sort_values(ascending=False).head())
 print("\nTraffic impact:")
 print(df.groupby("high_traffic")["delay"].mean())
 
-print("\nNight vs day:")
-print(df.groupby("is_night")["delay"].mean())
+print("\nTime of day:")
+print(df.groupby("time_of_day")["delay"].mean())
 
 # -----------------------
 # 💾 EXPORT
