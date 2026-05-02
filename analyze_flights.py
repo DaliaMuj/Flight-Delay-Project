@@ -27,12 +27,11 @@ def add_time_features(df):
 
 
 # -----------------------
-# 📊 TRAFFIC FEATURES
+# 📊 TRAFFIC
 # -----------------------
 def add_traffic_features(df):
     df["traffic_density"] = df.groupby("timestamp")["icao24"].transform("count")
 
-    # top 25% traffic = high
     threshold = df["traffic_density"].quantile(0.75)
     df["high_traffic"] = (df["traffic_density"] > threshold).astype(int)
 
@@ -60,34 +59,48 @@ def add_time_of_day(df):
 
 
 # -----------------------
-# ⚡ VELOCITY FEATURES
+# ⚡ SPEED + ALTITUDE FEATURES
 # -----------------------
-def add_velocity_features(df):
-    # calculate change
-    df["velocity_change"] = df.groupby("icao24")["velocity"].diff().fillna(0)
+def add_physics_features(df):
+    # speed bucket
+    df["speed_level"] = pd.cut(
+        df["velocity"],
+        bins=[0, 150, 250, 400],
+        labels=["Low", "Medium", "High"]
+    )
 
-    # adaptive threshold (bottom 10%)
-    threshold = df["velocity_change"].quantile(0.1)
+    df["speed_level_num"] = df["speed_level"].map({
+        "Low": 0,
+        "Medium": 1,
+        "High": 2
+    })
 
-    df["is_slowing"] = (df["velocity_change"] < threshold).astype(int)
+    # altitude bucket
+    df["altitude_level"] = pd.cut(
+        df["geo_altitude"],
+        bins=[0, 2000, 8000, 12000],
+        labels=["Low", "Cruise", "High"]
+    )
 
-    # debug
-    print("\nVelocity stats:")
-    print(df["velocity_change"].describe())
-    print("\nSlowing distribution:")
-    print(df["is_slowing"].value_counts())
+    df["altitude_level_num"] = df["altitude_level"].map({
+        "Low": 0,
+        "Cruise": 1,
+        "High": 2
+    })
 
     return df
 
 
 # -----------------------
-# CLEAN DATA
+# CLEAN
 # -----------------------
 def clean_data(df):
     df = df.fillna({
         "velocity": 0,
         "geo_altitude": 0,
-        "time_of_day_num": 0
+        "time_of_day_num": 0,
+        "speed_level_num": 0,
+        "altitude_level_num": 0
     })
     return df
 
@@ -122,8 +135,10 @@ def train_model(df):
         "traffic_density",
         "velocity",
         "geo_altitude",
-        "is_slowing",
-        "time_of_day_num"
+        "high_traffic",
+        "time_of_day_num",
+        "speed_level_num",
+        "altitude_level_num"
     ]
 
     df_model = df.dropna(subset=features + ["delay"])
@@ -151,11 +166,9 @@ def train_model(df):
     accuracy = model.score(X_test, y_test)
     print("\nModel accuracy:", accuracy)
 
-    # predict pe tot datasetul
     X_full = df[features].fillna(0)
     df["delay_prob"] = model.predict_proba(X_full)[:, 1]
 
-    # feature importance
     importances = model.feature_importances_
     print("\nFeature importance:")
     print(dict(zip(features, importances)))
@@ -193,9 +206,6 @@ def explain_delay(row):
 
     if row["velocity"] < 200:
         reasons.append("Low speed")
-
-    if row["is_slowing"] == 1:
-        reasons.append("Slowing down")
 
     if row["geo_altitude"] < 2000:
         reasons.append("Low altitude")
@@ -249,7 +259,7 @@ def main():
     df = add_time_features(df)
     df = add_traffic_features(df)
     df = add_time_of_day(df)
-    df = add_velocity_features(df)
+    df = add_physics_features(df)
     df = clean_data(df)
     df = create_target(df)
 
