@@ -40,7 +40,7 @@ df = df.fillna({
 })
 
 # -----------------------
-# 🎯 BETTER DELAY LOGIC
+# 🎯 DELAY LOGIC
 # -----------------------
 df["slow_flight"] = (
     (df["velocity"] < 200) &
@@ -93,10 +93,12 @@ else:
 
     df["delay_prob"] = model.predict_proba(df[features])[:, 1]
 
-    # 🔥 feature importance
+    # feature importance
     importances = model.feature_importances_
+    feature_importance = dict(zip(features, importances))
+
     print("\nFeature importance:")
-    print(list(zip(features, importances)))
+    print(feature_importance)
 
 # -----------------------
 # 🚦 RISK LEVEL
@@ -105,6 +107,35 @@ df["risk_level"] = pd.cut(
     df["delay_prob"],
     bins=[0, 0.3, 0.7, 1],
     labels=["Low", "Medium", "High"]
+)
+
+# -----------------------
+# 🧠 WHY (EXPLAINABILITY)
+# -----------------------
+def explain_row(row):
+    reasons = []
+
+    if row["high_traffic"] == 1:
+        reasons.append("High traffic")
+
+    if row["is_night"] == 1:
+        reasons.append("Night flight")
+
+    if row["velocity"] < 200:
+        reasons.append("Low speed")
+
+    if row["velocity_change"] < -20:
+        reasons.append("Slowing down")
+
+    if row["geo_altitude"] < 2000:
+        reasons.append("Low altitude")
+
+    return ", ".join(reasons)
+
+# aplicăm doar pentru zboruri riscante
+df["delay_reason"] = df.apply(
+    lambda row: explain_row(row) if row["delay_prob"] > 0.6 else "",
+    axis=1
 )
 
 # -----------------------
