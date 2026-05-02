@@ -62,8 +62,8 @@ def add_time_of_day(df):
 # ⚡ VELOCITY FEATURES
 # -----------------------
 def add_velocity_features(df):
-    df["velocity_change"] = df.groupby("icao24")["velocity"].diff().fillna(0)
-    df["is_slowing"] = (df["velocity_change"] < -10).astype(int)
+    threshold = df["velocity_change"].quantile(0.1)
+    df["is_slowing"] = (df["velocity_change"] < threshold).astype(int)
 
     return df
 
