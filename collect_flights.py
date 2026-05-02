@@ -5,36 +5,52 @@ import os
 
 url = "https://opensky-network.org/api/states/all"
 
-response = requests.get(url)
-data = response.json()
+try:
+    response = requests.get(url, timeout=10)
 
-states = data.get("states", [])
+    if response.status_code != 200:
+        print("API error:", response.status_code)
+        exit()
 
-if states:
-    df = pd.DataFrame(states, columns=[
-        "icao24","callsign","origin_country","time_position",
-        "last_contact","longitude","latitude","baro_altitude",
-        "on_ground","velocity","heading","vertical_rate",
-        "sensors","geo_altitude","squawk","spi","position_source"
-    ])
+    data = response.json()
 
-    df["timestamp"] = datetime.utcnow()
+except Exception as e:
+    print("Request failed:", e)
+    exit()
 
-    file_path = "flights_history.csv"
+states = data.get("states") or []
 
-    # dacă există deja fișier → îl citim
-    if os.path.isfile(file_path):
+if len(states) == 0:
+    print("No data received")
+    exit()
+
+df = pd.DataFrame(states, columns=[
+    "icao24","callsign","origin_country","time_position",
+    "last_contact","longitude","latitude","baro_altitude",
+    "on_ground","velocity","heading","vertical_rate",
+    "sensors","geo_altitude","squawk","spi","position_source"
+])
+
+df["timestamp"] = datetime.utcnow()
+
+file_path = "flights_history.csv"
+
+# citire safe
+if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+    try:
         old_df = pd.read_csv(file_path)
 
-        old_df["timestamp"] = pd.to_datetime(old_df["timestamp"])
+        old_df["timestamp"] = pd.to_datetime(old_df["timestamp"], errors="coerce")
         cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=2)
 
         old_df = old_df[old_df["timestamp"] > cutoff]
 
-        df = pd.concat([old_df, df])
+        df = pd.concat([old_df, df], ignore_index=True)
 
-    df.to_csv(file_path, index=False)
+    except Exception as e:
+        print("CSV read error:", e)
 
-    print("Saved:", len(df))
-else:
-    print("No data")
+# salvare
+df.to_csv(file_path, index=False)
+
+print("Saved rows:", len(df))
