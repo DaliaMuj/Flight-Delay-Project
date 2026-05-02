@@ -24,9 +24,7 @@ df["traffic_density"] = df.groupby("timestamp")["icao24"].transform("count")
 
 # 🧠 advanced features
 df["is_night"] = ((df["hour"] < 6) | (df["hour"] > 20)).astype(int)
-
 df["velocity_change"] = df.groupby("icao24")["velocity"].diff().fillna(0)
-
 df["high_traffic"] = (
     df["traffic_density"] > df["traffic_density"].median()
 ).astype(int)
@@ -91,7 +89,10 @@ else:
     accuracy = model.score(X_test, y_test)
     print("Model accuracy:", accuracy)
 
-    df["delay_prob"] = model.predict_proba(df[features])[:, 1]
+    # IMPORTANT: evităm NaN la predict
+    X_full = df[features].fillna(0)
+
+    df["delay_prob"] = model.predict_proba(X_full)[:, 1]
 
     # feature importance
     importances = model.feature_importances_
@@ -101,13 +102,20 @@ else:
     print(feature_importance)
 
 # -----------------------
-# 🚦 RISK LEVEL
+# 🚦 FIX DELAY_PROB (NO NaN)
+# -----------------------
+df["delay_prob"] = df["delay_prob"].fillna(0)
+
+# -----------------------
+# 🚦 RISK LEVEL (FIXED)
 # -----------------------
 df["risk_level"] = pd.cut(
     df["delay_prob"],
-    bins=[0, 0.3, 0.7, 1],
+    bins=[-0.01, 0.3, 0.7, 1.01],
     labels=["Low", "Medium", "High"]
 )
+
+df["risk_level"] = df["risk_level"].astype(str).fillna("Low")
 
 # -----------------------
 # 🧠 WHY (EXPLAINABILITY)
@@ -132,7 +140,6 @@ def explain_row(row):
 
     return ", ".join(reasons)
 
-# aplicăm doar pentru zboruri riscante
 df["delay_reason"] = df.apply(
     lambda row: explain_row(row) if row["delay_prob"] > 0.6 else "",
     axis=1
