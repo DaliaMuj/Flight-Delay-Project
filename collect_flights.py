@@ -41,7 +41,7 @@ if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
         old_df = pd.read_csv(file_path)
 
         old_df["timestamp"] = pd.to_datetime(old_df["timestamp"], errors="coerce")
-        cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=2)
+        cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=7)
 
         old_df = old_df[old_df["timestamp"] > cutoff]
 
