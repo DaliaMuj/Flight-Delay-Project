@@ -154,11 +154,12 @@ def train_model(df):
     )
 
     model = RandomForestClassifier(
-            n_estimators=1000,
-            max_depth=7,
-            min_samples_split=15,
-            min_samples_leaf=8,
+            n_estimators=400,
+            max_depth=9,
+            min_samples_split=10,
+            min_samples_leaf=4,
             max_features="sqrt",
+            bootstrap=True,
             random_state=42,
             n_jobs=-1
     )
